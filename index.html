@@ -104,6 +104,7 @@
   .modal-foot button{flex:1 1 0;border-radius:12px;font-weight:700;font-size:15px;padding:14px;border:none;display:flex;align-items:center;justify-content:center;gap:7px;}
   .b-wa{background:#25D366;color:#fff;}
   .b-copiar{background:#222222;color:#fff;}
+  .b-pdf{background:#C19D53;color:#231B08;}
   .toast{position:fixed;bottom:110px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--azul-osc);color:#fff;font-size:14px;font-weight:600;padding:11px 18px;border-radius:999px;z-index:60;opacity:0;transition:.25s;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:90%;text-align:center;}
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
   .warnbar{background:#FCEFC7;color:#7A5B00;font:600 13px/1.4 -apple-system,sans-serif;padding:11px 14px;border-bottom:1px solid #EAD9A0;}
@@ -294,6 +295,9 @@
     <div class="modal-foot">
       <button type="button" class="b-copiar" id="btnCopiar">📋 Copiar texto</button>
       <button type="button" class="b-wa" id="btnWA">💬 Enviar por WhatsApp (PDF + texto)</button>
+    </div>
+    <div class="modal-foot" id="footPDF" style="display:none;border-top:none;padding-top:0">
+      <button type="button" class="b-pdf" id="btnPDF">📎 Enviar soporte PDF</button>
     </div>
   </div>
 </div>
@@ -927,7 +931,7 @@
     }
     // #1 Hora fin: si está vacía, tomar la del último cliente (solo al generar de verdad)
     if(!$("horaFin").value){var hu=horaUltimoCliente();if(hu){$("horaFin").value=hu;guardar();}}
-    $("reporteTxt").textContent=generarTexto();$("overlay").classList.add("on");
+    $("reporteTxt").textContent=generarTexto();if($("footPDF"))$("footPDF").style.display="none";$("overlay").classList.add("on");
     sincronizarTodo(); // envía clientes pendientes + cierre a la hoja Reportes (sin PDF)
     liberarNube(); // #6 libera vehículo/conductor/auxiliar al cerrar la ruta
   }
@@ -938,20 +942,30 @@
     else fallbackCopiar(txt);
   }
   function fallbackCopiar(txt){var ta=document.createElement("textarea");ta.value=txt;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.focus();ta.select();try{document.execCommand("copy");toast("Reporte copiado");}catch(e){toast("Copia manual desde el recuadro");}document.body.removeChild(ta);}
+  // Paso 1: enviar el TEXTO por WhatsApp y revelar el botón de soporte PDF
   function compartirWA(){
     var txt=generarTexto();
-    var blob=null;
-    if(window.jspdf&&window.jspdf.jsPDF){try{blob=generarPDFBlob();}catch(err){blob=null;}}
-    if(blob&&navigator.canShare&&window.File){
-      var e=estado();var fname="Cierre_"+(e.ruta||"ruta").replace(/\s/g,"")+"_"+(e.fecha||"")+".pdf";
-      try{var file=new File([blob],fname,{type:"application/pdf"});
-        if(navigator.canShare({files:[file]})){navigator.share({files:[file],text:txt,title:"Cierre de ruta"}).catch(function(){});return;}
-      }catch(err){}
-    }
-    // Sin soporte de archivos o sin PDF: enviar solo el texto
     if(navigator.share){navigator.share({text:txt}).catch(function(){});}
     else{window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank");}
-    if(!blob)toast("Se envió el texto (el PDF necesita conexión)");
+    mostrarBotonPDF();
+  }
+  function mostrarBotonPDF(){
+    var f=$("footPDF"); if(f)f.style.display="flex";
+    toast("Texto enviado. Ahora envía el soporte PDF 👇");
+  }
+  // Paso 2: enviar el PDF de soporte (archivo)
+  function enviarSoportePDF(){
+    if(!(window.jspdf&&window.jspdf.jsPDF)){toast("El soporte PDF necesita conexión");return;}
+    var blob=null;try{blob=generarPDFBlob();}catch(err){}
+    if(!blob){toast("No se pudo generar el PDF");return;}
+    var e=estado();var fname="Cierre_"+(e.ruta||"ruta").replace(/\s/g,"")+"_"+(e.fecha||"")+".pdf";
+    try{
+      if(navigator.canShare&&window.File){var file=new File([blob],fname,{type:"application/pdf"});
+        if(navigator.canShare({files:[file]})){navigator.share({files:[file],title:"Soporte PDF · Cierre de ruta"}).catch(function(){});return;}}
+    }catch(err){}
+    // Sin Web Share de archivos: descargar el PDF para adjuntarlo manualmente
+    var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download=fname;a.rel="noopener";document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(url);},1500);
+    toast("PDF descargado; adjúntalo en el chat");
   }
 
   function generarPDFBlob(){
@@ -1040,6 +1054,7 @@
     $("btnCerrar").addEventListener("click",cerrarModal);
     $("btnCopiar").addEventListener("click",copiar);
     $("btnWA").addEventListener("click",compartirWA);
+    $("btnPDF").addEventListener("click",enviarSoportePDF);
     $("overlay").addEventListener("click",function(e){if(e.target===$("overlay"))cerrarModal();});
     // Guardado extra al minimizar / cambiar de app / cerrar
     document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")guardar();});
