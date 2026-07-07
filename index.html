@@ -104,7 +104,6 @@
   .modal-foot button{flex:1 1 0;border-radius:12px;font-weight:700;font-size:15px;padding:14px;border:none;display:flex;align-items:center;justify-content:center;gap:7px;}
   .b-wa{background:#25D366;color:#fff;}
   .b-copiar{background:#222222;color:#fff;}
-  .b-pdf{background:#C19D53;color:#231B08;}
   .toast{position:fixed;bottom:110px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--azul-osc);color:#fff;font-size:14px;font-weight:600;padding:11px 18px;border-radius:999px;z-index:60;opacity:0;transition:.25s;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:90%;text-align:center;}
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
   .warnbar{background:#FCEFC7;color:#7A5B00;font:600 13px/1.4 -apple-system,sans-serif;padding:11px 14px;border-bottom:1px solid #EAD9A0;}
@@ -131,7 +130,6 @@
   .lbl-total{color:var(--azul)!important;font-weight:800!important;}
   .aviso-km{margin-top:10px;background:#FCEDED;border:1px solid #F0C9C9;color:#B23636;font-size:12.5px;font-weight:600;padding:10px 12px;border-radius:10px;}
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -294,10 +292,7 @@
     <div class="modal-body"><div class="reporte-txt" id="reporteTxt"></div></div>
     <div class="modal-foot">
       <button type="button" class="b-copiar" id="btnCopiar">📋 Copiar texto</button>
-      <button type="button" class="b-wa" id="btnWA">💬 Enviar por WhatsApp (PDF + texto)</button>
-    </div>
-    <div class="modal-foot" id="footPDF" style="display:none;border-top:none;padding-top:0">
-      <button type="button" class="b-pdf" id="btnPDF">📎 Enviar soporte PDF</button>
+      <button type="button" class="b-wa" id="btnWA">💬 Enviar por WhatsApp</button>
     </div>
   </div>
 </div>
@@ -883,6 +878,10 @@
     if(R.consig>0)t+="🏦 Consignaciones: "+money(R.consig)+"\n";
     t+="👉 Efectivo a entregar"+((R.consig>0||R.gastos>0)?" (base + efectivo − consig − gastos)":" (base + efectivo)")+": "+money(R.efectivoEntregar)+"\n";
     var cj=cajaValores();var difE=cj.totEf-R.efectivoEntregar;
+    t+="\n🧾 *Recaudo en efectivo (arqueo):*\n";
+    t+="$100.000: "+money(aNum($("b100").value))+"   $50.000: "+money(aNum($("b50").value))+"   $20.000: "+money(aNum($("b20").value))+"\n";
+    t+="$10.000: "+money(aNum($("b10").value))+"   $5.000: "+money(aNum($("b5").value))+"   $2.000: "+money(aNum($("b2").value))+"\n";
+    t+="Monedas: "+money(aNum($("monedas").value))+"\n\n";
     t+="💵 Efectivo entregado: "+money(cj.totEf)+" (dif: "+(difE===0?"cuadra ✅":(difE>0?"Sobran "+money(difE):"Faltan "+money(Math.abs(difE))))+")\n";
     t+="📦 TOTAL ENTREGADO (Efect + Consig): "+money(cj.totEnt)+"\n";
     t+="\n──────────────\n";
@@ -931,7 +930,7 @@
     }
     // #1 Hora fin: si está vacía, tomar la del último cliente (solo al generar de verdad)
     if(!$("horaFin").value){var hu=horaUltimoCliente();if(hu){$("horaFin").value=hu;guardar();}}
-    $("reporteTxt").textContent=generarTexto();if($("footPDF"))$("footPDF").style.display="none";$("overlay").classList.add("on");
+    $("reporteTxt").textContent=generarTexto();$("overlay").classList.add("on");
     sincronizarTodo(); // envía clientes pendientes + cierre a la hoja Reportes (sin PDF)
     liberarNube(); // #6 libera vehículo/conductor/auxiliar al cerrar la ruta
   }
@@ -942,69 +941,11 @@
     else fallbackCopiar(txt);
   }
   function fallbackCopiar(txt){var ta=document.createElement("textarea");ta.value=txt;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.focus();ta.select();try{document.execCommand("copy");toast("Reporte copiado");}catch(e){toast("Copia manual desde el recuadro");}document.body.removeChild(ta);}
-  // Paso 1: enviar el TEXTO por WhatsApp y revelar el botón de soporte PDF
+  // Enviar el reporte en TEXTO por WhatsApp
   function compartirWA(){
     var txt=generarTexto();
     if(navigator.share){navigator.share({text:txt}).catch(function(){});}
     else{window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank");}
-    mostrarBotonPDF();
-  }
-  function mostrarBotonPDF(){
-    var f=$("footPDF"); if(f)f.style.display="flex";
-    toast("Texto enviado. Ahora envía el soporte PDF 👇");
-  }
-  // Paso 2: enviar el PDF de soporte (archivo)
-  function enviarSoportePDF(){
-    if(!(window.jspdf&&window.jspdf.jsPDF)){toast("El soporte PDF necesita conexión");return;}
-    var blob=null;try{blob=generarPDFBlob();}catch(err){}
-    if(!blob){toast("No se pudo generar el PDF");return;}
-    var e=estado();var fname="Cierre_"+(e.ruta||"ruta").replace(/\s/g,"")+"_"+(e.fecha||"")+".pdf";
-    try{
-      if(navigator.canShare&&window.File){var file=new File([blob],fname,{type:"application/pdf"});
-        if(navigator.canShare({files:[file]})){navigator.share({files:[file],title:"Soporte PDF · Cierre de ruta"}).catch(function(){});return;}}
-    }catch(err){}
-    // Sin Web Share de archivos: descargar el PDF para adjuntarlo manualmente
-    var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download=fname;a.rel="noopener";document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(url);},1500);
-    toast("PDF descargado; adjúntalo en el chat");
-  }
-
-  function generarPDFBlob(){
-    var JS=window.jspdf&&window.jspdf.jsPDF;if(!JS)return null;
-    var e=estado(),R=calcRecaudo(),cj=cajaValores();
-    var doc=new JS({unit:"pt",format:"a4"});var y=44,L=40;
-    function nl(){y+=15;if(y>800){doc.addPage();y=44;}}
-    function line(t,b){doc.setFont("helvetica",b?"bold":"normal");var s=doc.splitTextToSize(String(t),515);for(var i=0;i<s.length;i++){doc.text(s[i],L,y);nl();}}
-    function sec(t){y+=8;doc.setFontSize(12.5);doc.setTextColor(31,58,95);line(t,true);doc.setFontSize(10.5);doc.setTextColor(30,40,55);}
-    doc.setFontSize(16);doc.setTextColor(31,58,95);line("Cierre de ruta — Robedans",true);
-    doc.setFontSize(10.5);doc.setTextColor(30,40,55);line("Reporte "+getReporteId().substring(0,6)+" — "+(e.fecha||""));
-    sec("Datos de la ruta");
-    line("Ruta: "+e.ruta+"    Vehículo: "+e.vehiculo);
-    line("Conductor: "+e.conductor+" (ID "+idDeCatalogo("Conductor",e.conductor)+")");
-    line("Auxiliar: "+e.auxiliar+" (ID "+idDeCatalogo("Auxiliar",e.auxiliar)+")");
-    line("Hora salida: "+(fmtHora(e.horaSalida)||"—")+"    Tanqueo: "+(fmtHora(e.tanqueo)||"—")+"    Hora fin: "+(fmtHora(e.horaFin)||"—"));
-    line("Km inicial: "+(e.kmInicial||"—")+"    Km final: "+(e.kmFinal||"—"));
-    line("Base: "+money(aNum(e.base))+"    Canastillas salida: "+aNum(e.canastIni)+"    regreso: "+aNum(e.canastFin));
-    if(almuerzoListo())line("Almuerzo: "+fmtHora(almuerzo.ini)+" – "+fmtHora(almuerzo.fin));
-    sec("Recaudo");
-    line("Efectivo: "+money(R.r.Efectivo)+"    Transferencia: "+money(R.r.Transferencia)+"    Firma-Crédito: "+money(R.r.FirmaCredito));
-    line("Total facturado: "+money(R.fact)+"    Total recaudado: "+money(R.recaudado));
-    line("Efectivo a entregar (base + efectivo − consig − gastos): "+money(R.efectivoEntregar),true);
-    sec("Gastos");
-    line("Parqueadero: "+money(aNum($("parqueadero").value))+"    Peaje: "+money(aNum($("peaje").value))+"    Otros: "+money(aNum($("otrosGasto").value)));
-    if($("otrosCual").value.trim())line("Otros — cuál: "+$("otrosCual").value.trim());
-    line("TOTAL GASTOS: "+money(totalGastos()),true);
-    sec("Recaudo en efectivo (arqueo)");
-    line("$100.000: "+money(aNum($("b100").value))+"    $50.000: "+money(aNum($("b50").value))+"    $20.000: "+money(aNum($("b20").value)));
-    line("$10.000: "+money(aNum($("b10").value))+"    $5.000: "+money(aNum($("b5").value))+"    $2.000: "+money(aNum($("b2").value)));
-    line("Monedas: "+money(aNum($("monedas").value)));
-    line("TOTAL EFECTIVO: "+money(cj.totEf),true);
-    line("Consignaciones: "+money(cj.consig));
-    line("TOTAL ENTREGADO (Efect + Consig): "+money(cj.totEnt),true);
-    var difE=cj.totEf-R.efectivoEntregar;
-    line("Diferencia efectivo: "+(difE===0?"cuadra":(difE>0?"+":"-")+money(Math.abs(difE))));
-    line("Total recaudo verificado: "+money(cj.sumaBilletes)+"    Diferencia recaudo verificado: "+money(cj.totEf-cj.sumaBilletes));
-    if(e.novedades.trim()){sec("Novedades generales");line(e.novedades.trim());}
-    return doc.output("blob");
   }
 
   function exportarCSV(){
@@ -1054,7 +995,6 @@
     $("btnCerrar").addEventListener("click",cerrarModal);
     $("btnCopiar").addEventListener("click",copiar);
     $("btnWA").addEventListener("click",compartirWA);
-    $("btnPDF").addEventListener("click",enviarSoportePDF);
     $("overlay").addEventListener("click",function(e){if(e.target===$("overlay"))cerrarModal();});
     // Guardado extra al minimizar / cambiar de app / cerrar
     document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")guardar();});
