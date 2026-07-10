@@ -137,7 +137,7 @@
   <div class="hrow">
     <div>
       <h1>Reporte de Ruta</h1>
-      <div class="sub">Logística Robedans · <span id="appVer">v6</span></div>
+      <div class="sub">Logística Robedans · <span id="appVer">v7</span></div>
       <div class="saved" id="savedInfo">Los datos se guardan solos en este teléfono</div>
       <div class="syncinfo sync-ok" id="syncInfo">☁️ Sincronización activada</div>
     </div>
@@ -347,6 +347,12 @@
     c=c.filter(function(it){return claveItem(it)!==k;});
     c.push(payload);guardarCola(c);actualizarPendientes();programarFlush();
   }
+  // El cierre va de PRIMERO: si el usuario se va a WhatsApp, el dato crítico ya salió.
+  function encolarPrioritario(payload){
+    var c=leerCola();var k=claveItem(payload);
+    c=c.filter(function(it){return claveItem(it)!==k;});
+    c.unshift(payload);guardarCola(c);actualizarPendientes();
+  }
   var flushTimer=null;
   function programarFlush(){if(flushTimer)return;flushTimer=setTimeout(function(){flushTimer=null;flush();},1200);}
 
@@ -455,7 +461,7 @@
     asegurarIds();
     for(var i=0;i<clientes.length;i++){if(clientes[i].nombre.trim())encolar(payloadCliente(i));}
     if(almuerzoListo())encolar(payloadAlmuerzo());
-    encolar(payloadCierre());
+    encolarPrioritario(payloadCierre()); // el cierre encabeza la cola
     flush();
   }
 
